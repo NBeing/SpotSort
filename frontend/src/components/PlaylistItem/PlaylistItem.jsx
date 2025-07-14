@@ -1,5 +1,4 @@
 import React from 'react'
-import { Music } from 'lucide-react'
 
 const PlaylistItem = ({ playlist, isActive }) => {
   return (
@@ -12,8 +11,7 @@ const PlaylistItem = ({ playlist, isActive }) => {
         {playlist.key}
       </div>
       <div className="font-medium text-sm mb-1">{playlist.name}</div>
-      <div className="text-xs text-gray-400 flex items-center justify-center gap-1">
-        <Music size={12} />
+      <div className="text-xs text-gray-400">
         {playlist.songs ? playlist.songs.length : 0} songs
       </div>
     </div>

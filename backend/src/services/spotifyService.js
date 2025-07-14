@@ -37,17 +37,20 @@ export class SpotifyService {
 
   async exchangeCodeForTokens(code) {
     try {
-      const response = await axios.post(`${this.authURL}/api/token`, {
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: this.redirectUri,
-        client_id: this.clientId,
-        client_secret: this.clientSecret
-      }, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+      const authString = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')
+      
+      const response = await axios.post(`${this.authURL}/api/token`, 
+        new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: this.redirectUri
+        }), {
+          headers: {
+            'Authorization': `Basic ${authString}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
         }
-      })
+      )
 
       return response.data
     } catch (error) {
@@ -58,16 +61,19 @@ export class SpotifyService {
 
   async refreshAccessToken(refreshToken) {
     try {
-      const response = await axios.post(`${this.authURL}/api/token`, {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: this.clientId,
-        client_secret: this.clientSecret
-      }, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+      const authString = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')
+      
+      const response = await axios.post(`${this.authURL}/api/token`,
+        new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        }), {
+          headers: {
+            'Authorization': `Basic ${authString}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
         }
-      })
+      )
 
       return response.data
     } catch (error) {
@@ -94,6 +100,9 @@ export class SpotifyService {
       const response = await axios(config)
       return response.data
     } catch (error) {
+      if (error.response?.status === 401) {
+        throw new Error('TOKEN_EXPIRED')
+      }
       console.error(`Spotify API error (${endpoint}):`, error.response?.data || error.message)
       throw error
     }
@@ -119,7 +128,8 @@ export class SpotifyService {
         album_art: data.item.album.images[0]?.url,
         duration_ms: data.item.duration_ms,
         progress_ms: data.progress_ms,
-        is_playing: data.is_playing
+        is_playing: data.is_playing,
+        uri: data.item.uri
       }
     } catch (error) {
       if (error.response?.status === 204) {
@@ -127,42 +137,6 @@ export class SpotifyService {
       }
       throw error
     }
-  }
-
-  async getPlaybackState(accessToken) {
-    try {
-      return this.makeSpotifyRequest(accessToken, '/me/player')
-    } catch (error) {
-      if (error.response?.status === 204) {
-        return null // No active device
-      }
-      throw error
-    }
-  }
-
-  async play(accessToken, deviceId = null) {
-    const endpoint = deviceId ? `/me/player/play?device_id=${deviceId}` : '/me/player/play'
-    return this.makeSpotifyRequest(accessToken, endpoint, 'PUT')
-  }
-
-  async pause(accessToken) {
-    return this.makeSpotifyRequest(accessToken, '/me/player/pause', 'PUT')
-  }
-
-  async skipToNext(accessToken) {
-    return this.makeSpotifyRequest(accessToken, '/me/player/next', 'POST')
-  }
-
-  async skipToPrevious(accessToken) {
-    return this.makeSpotifyRequest(accessToken, '/me/player/previous', 'POST')
-  }
-
-  async setVolume(accessToken, volumePercent) {
-    return this.makeSpotifyRequest(
-      accessToken, 
-      `/me/player/volume?volume_percent=${volumePercent}`, 
-      'PUT'
-    )
   }
 
   async getUserPlaylists(accessToken) {
@@ -195,28 +169,5 @@ export class SpotifyService {
         uris: [trackUri]
       }
     )
-  }
-
-  async removeFromPlaylist(accessToken, playlistId, trackId) {
-    const trackUri = trackId.startsWith('spotify:') ? trackId : `spotify:track:${trackId}`
-    
-    return this.makeSpotifyRequest(
-      accessToken,
-      `/playlists/${playlistId}/tracks`,
-      'DELETE',
-      {
-        tracks: [{ uri: trackUri }]
-      }
-    )
-  }
-
-  async search(accessToken, query, type = 'track', limit = 20) {
-    const params = new URLSearchParams({
-      q: query,
-      type,
-      limit: limit.toString()
-    })
-    
-    return this.makeSpotifyRequest(accessToken, `/search?${params.toString()}`)
   }
 }

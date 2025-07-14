@@ -3,7 +3,7 @@ import PlaylistItem from '../PlaylistItem/PlaylistItem'
 
 const PlaylistGrid = ({ playlists, activePlaylist, onCreatePlaylist }) => {
   return (
-    <div className="card-glass p-8">
+    <div className="bg-white bg-opacity-10 backdrop-blur-lg rounded-3xl p-8 border border-white border-opacity-20">
       <h2 className="text-2xl font-bold mb-6 text-spotify-green">Your Playlists</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         {playlists.map((playlist) => (

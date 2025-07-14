@@ -6,20 +6,43 @@ import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
 import session from 'express-session'
 import rateLimit from 'express-rate-limit'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
-dotenv.config()
+import authRoutes from './routes/auth.js'
+import spotifyRoutes from './routes/spotify.js'
+
+// Get __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+// Load environment variables from the backend directory
+dotenv.config({ path: path.join(__dirname, '../.env') })
 
 const app = express()
 const PORT = process.env.PORT || 5000
 
-// Rate limiting
+// Debug environment variables (remove in production)
+console.log('🔍 Environment check:')
+console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`)
+console.log(`SPOTIFY_CLIENT_ID: ${process.env.SPOTIFY_CLIENT_ID ? '✅ Set' : '❌ Missing'}`)
+console.log(`SPOTIFY_CLIENT_SECRET: ${process.env.SPOTIFY_CLIENT_SECRET ? '✅ Set' : '❌ Missing'}`)
+console.log(`SPOTIFY_REDIRECT_URI: ${process.env.SPOTIFY_REDIRECT_URI || '❌ Missing'}`)
+
+// Rate limiting - more lenient for development
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Higher limit for dev
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false
 })
 
 // Middleware
-app.use(helmet())
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false
+}))
 app.use(morgan('combined'))
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://127.0.0.1:3000',
@@ -30,34 +53,47 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: process.env.SESSION_SECRET || 'fallback-secret-change-this',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   }
 }))
 
+// Routes
+app.use('/api/auth', authRoutes)
+app.use('/api/spotify', spotifyRoutes)
+
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() })
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    spotify_configured: !!(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET)
+  })
 })
 
-// Temporary routes until the full routes are created
-app.get('/api/auth/login', (req, res) => {
-  res.json({ message: 'Auth routes not yet implemented' })
-})
-
-app.get('/api/spotify/me', (req, res) => {
-  res.json({ message: 'Spotify routes not yet implemented' })
-})
-
-// Error handling
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err)
-  res.status(500).json({ error: 'Internal server error' })
+
+  if (err.code === 'EBADCSRFTOKEN') {
+    return res.status(403).json({ error: 'Invalid CSRF token' })
+  }
+
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON' })
+  }
+
+  res.status(500).json({ 
+    error: 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { details: err.message })
+  })
 })
 
 // 404 handler
@@ -68,4 +104,5 @@ app.use('*', (req, res) => {
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`🎵 Spotify Organizer Backend running on http://127.0.0.1:${PORT}`)
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`CORS Origin: ${process.env.CORS_ORIGIN || 'http://127.0.0.1:3000'}`)
 })
