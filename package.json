@@ -1,0 +1,22 @@
+{
+  "name": "spotify-playlist-organizer",
+  "version": "1.0.0",
+  "description": "Organize your Spotify playlists with keyboard shortcuts",
+  "main": "index.js",
+  "scripts": {
+    "setup": "./scripts/setup-dependencies.sh",
+    "populate": "./scripts/populate-files.sh",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "test": "concurrently \"cd frontend && npm test\" \"cd backend && npm test\""
+  },
+  "keywords": ["spotify", "playlist", "organizer", "react", "node"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

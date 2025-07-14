@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1db954, #191414);
+    min-height: 100vh;
+    color: white;
+  }
+}
+
+@layer components {
+  .btn-spotify {
+    @apply bg-spotify-green hover:bg-green-600 text-black font-bold py-3 px-6 rounded-full transition-all duration-300 hover:-translate-y-1;
+  }
+  
+  .card-glass {
+    @apply bg-white bg-opacity-10 backdrop-blur-lg rounded-3xl border border-white border-opacity-20;
+  }
+}
