@@ -1,82 +1,125 @@
-import { useState, useEffect, useRef } from 'react'
-import { spotifyApi } from '../services/spotifyApi'
+import { useState, useEffect } from 'react'
 
 export const useSpotifyAuth = () => {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const initRef = useRef(false)
 
   useEffect(() => {
-    // Prevent multiple initializations
-    if (initRef.current) return
-    initRef.current = true
+    let mounted = true
 
-    const initAuth = async () => {
+    const checkAuth = async () => {
+      console.log('🔍 [Auth] Starting authentication check...')
+      
       try {
         setLoading(true)
         setError(null)
 
-        // Check for auth success/error in URL
+        // Check URL parameters first
         const urlParams = new URLSearchParams(window.location.search)
-        const authSuccess = urlParams.get('auth')
         const authError = urlParams.get('error')
+        const authSuccess = urlParams.get('auth')
         
         if (authError) {
-          setError(`Authentication failed: ${authError}`)
+          console.log('❌ [Auth] Error in URL:', authError)
+          if (mounted) {
+            setError(`Authentication failed: ${authError}`)
+            setLoading(false)
+          }
           // Clean up URL
           window.history.replaceState({}, document.title, window.location.pathname)
           return
         }
 
         if (authSuccess === 'success') {
-          // Clean up URL
+          console.log('✅ [Auth] Success parameter found, cleaning URL')
           window.history.replaceState({}, document.title, window.location.pathname)
+          // Small delay to ensure backend session is ready
+          await new Promise(resolve => setTimeout(resolve, 500))
         }
 
-        // Check if user is already authenticated
-        const session = await spotifyApi.getSession()
-        if (session && session.user) {
-          setUser(session.user)
+        // Check session with backend
+        console.log('🔍 [Auth] Checking session with backend...')
+        const response = await fetch('http://127.0.0.1:5000/api/auth/session', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        })
+
+        console.log('🔍 [Auth] Session response status:', response.status)
+
+        if (response.ok) {
+          const sessionData = await response.json()
+          console.log('✅ [Auth] Session data received:', sessionData.user?.display_name || sessionData.user?.id || 'User')
+          
+          if (mounted && sessionData.user) {
+            setUser(sessionData.user)
+          }
+        } else if (response.status === 401) {
+          console.log('ℹ️ [Auth] Not authenticated (401)')
+          if (mounted) {
+            setUser(null)
+          }
         } else {
-          setUser(null)
+          console.log('⚠️ [Auth] Unexpected response:', response.status)
+          const errorText = await response.text()
+          console.log('⚠️ [Auth] Error response:', errorText)
+          if (mounted) {
+            setUser(null)
+          }
         }
       } catch (err) {
-        console.error('Auth initialization error:', err)
-        // Don't set error for failed session check, just log it
-        setUser(null)
+        console.error('❌ [Auth] Check failed:', err)
+        if (mounted) {
+          setError(`Connection failed: ${err.message}`)
+        }
       } finally {
-        setLoading(false)
+        if (mounted) {
+          console.log('🔍 [Auth] Authentication check complete')
+          setLoading(false)
+        }
       }
     }
 
-    // Add a small delay to prevent rapid-fire requests
-    const timer = setTimeout(initAuth, 100)
-    return () => clearTimeout(timer)
+    // Small delay to prevent race conditions
+    const timer = setTimeout(checkAuth, 200)
+
+    return () => {
+      mounted = false
+      clearTimeout(timer)
+    }
   }, [])
+
+  const login = () => {
+    console.log('🔍 [Auth] Redirecting to login...')
+    window.location.href = 'http://127.0.0.1:5000/api/auth/login'
+  }
 
   const logout = async () => {
     try {
-      await spotifyApi.logout()
+      console.log('🔍 [Auth] Logging out...')
+      await fetch('http://127.0.0.1:5000/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      })
       setUser(null)
       setError(null)
+      console.log('✅ [Auth] Logout successful')
     } catch (err) {
-      console.error('Logout error:', err)
-      // Still clear user even if logout request failed
+      console.error('❌ [Auth] Logout failed:', err)
+      // Clear user anyway
       setUser(null)
     }
-  }
-
-  const login = () => {
-    window.location.href = spotifyApi.getAuthUrl()
   }
 
   return {
     user,
     loading,
     error,
-    logout,
     login,
+    logout,
     isAuthenticated: !!user
   }
 }

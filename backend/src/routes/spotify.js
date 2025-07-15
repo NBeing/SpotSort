@@ -19,4 +19,7 @@ router.get('/playlists', spotifyController.getUserPlaylists.bind(spotifyControll
 router.post('/playlists', spotifyController.createPlaylist.bind(spotifyController))
 router.post('/playlists/:id/tracks', spotifyController.addToPlaylist.bind(spotifyController))
 
+// Search
+router.get('/search', spotifyController.search.bind(spotifyController))
+
 export default router

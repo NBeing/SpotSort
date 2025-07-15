@@ -1,12 +1,15 @@
 import axios from 'axios'
+import config from '../config/index.js'
 
 export class SpotifyService {
   constructor() {
-    this.clientId = process.env.SPOTIFY_CLIENT_ID
-    this.clientSecret = process.env.SPOTIFY_CLIENT_SECRET
-    this.redirectUri = process.env.SPOTIFY_REDIRECT_URI
+    this.clientId = config.SPOTIFY_CLIENT_ID
+    this.clientSecret = config.SPOTIFY_CLIENT_SECRET
+    this.redirectUri = config.SPOTIFY_REDIRECT_URI
     this.baseURL = 'https://api.spotify.com/v1'
     this.authURL = 'https://accounts.spotify.com'
+
+    console.log('✅ [SpotifyService] Successfully initialized')
   }
 
   getAuthorizationUrl() {
@@ -54,7 +57,7 @@ export class SpotifyService {
 
       return response.data
     } catch (error) {
-      console.error('Token exchange error:', error.response?.data || error.message)
+      console.error('❌ [SpotifyService] Token exchange error:', error.response?.data || error.message)
       throw new Error('Failed to exchange code for tokens')
     }
   }
@@ -77,7 +80,7 @@ export class SpotifyService {
 
       return response.data
     } catch (error) {
-      console.error('Token refresh error:', error.response?.data || error.message)
+      console.error('❌ [SpotifyService] Token refresh error:', error.response?.data || error.message)
       throw new Error('Failed to refresh access token')
     }
   }
@@ -103,7 +106,7 @@ export class SpotifyService {
       if (error.response?.status === 401) {
         throw new Error('TOKEN_EXPIRED')
       }
-      console.error(`Spotify API error (${endpoint}):`, error.response?.data || error.message)
+      console.error(`❌ [SpotifyService] API error (${endpoint}):`, error.response?.data || error.message)
       throw error
     }
   }
@@ -133,7 +136,7 @@ export class SpotifyService {
       }
     } catch (error) {
       if (error.response?.status === 204) {
-        return null // No track currently playing
+        return null
       }
       throw error
     }
@@ -169,5 +172,178 @@ export class SpotifyService {
         uris: [trackUri]
       }
     )
+  }
+
+  async search(accessToken, query, type = 'track', limit = 20) {
+    const params = new URLSearchParams({
+      q: query,
+      type,
+      limit: limit.toString()
+    })
+    
+    return this.makeSpotifyRequest(accessToken, `/search?${params.toString()}`)
+  }
+
+  async getLikedSongs(accessToken, limit = 50, offset = 0) {
+    // Try to get user's market first
+    let userMarket = 'US' // Default fallback
+    try {
+      const userProfile = await this.getCurrentUser(accessToken)
+      userMarket = userProfile.country || 'US'
+    } catch (error) {
+      console.log('⚠️ [SpotifyService] Could not get user market, using US as default')
+    }
+
+    const endpoint = `/me/tracks?limit=${limit}&offset=${offset}&market=${userMarket}`
+    const data = await this.makeSpotifyRequest(accessToken, endpoint)
+    
+    const tracks = data.items.map(item => ({
+      id: item.track.id,
+      title: item.track.name,
+      artist: item.track.artists.map(artist => artist.name).join(', '),
+      album: item.track.album.name,
+      album_art: item.track.album.images[0]?.url,
+      duration_ms: item.track.duration_ms,
+      popularity: item.track.popularity,
+      explicit: item.track.explicit,
+      preview_url: item.track.preview_url,
+      uri: item.track.uri,
+      added_at: item.added_at,
+      release_date: item.track.album.release_date,
+      track_number: item.track.track_number,
+      disc_number: item.track.disc_number
+    }))
+
+    return {
+      items: tracks,
+      total: data.total,
+      limit: data.limit,
+      offset: data.offset,
+      next: data.next,
+      previous: data.previous
+    }
+  }
+
+  async getAudioFeatures(accessToken, trackId) {
+    try {
+      return await this.makeSpotifyRequest(accessToken, `/audio-features/${trackId}`)
+    } catch (error) {
+      console.error(`Error getting audio features for ${trackId}:`, error)
+      return null
+    }
+  }
+
+  async getAudioFeaturesMultiple(accessToken, trackIds) {
+    try {
+      const ids = trackIds.join(',')
+      const data = await this.makeSpotifyRequest(accessToken, `/audio-features?ids=${ids}`)
+      return data.audio_features || []
+    } catch (error) {
+      console.error('Error getting multiple audio features:', error)
+      return []
+    }
+  }
+
+  async getTrackDetails(accessToken, trackId) {
+    try {
+      return await this.makeSpotifyRequest(accessToken, `/tracks/${trackId}`)
+    } catch (error) {
+      console.error(`Error getting track details for ${trackId}:`, error)
+      return null
+    }
+  }
+
+  async testPreviewUrls(accessToken) {
+    console.log('🔍 [SpotifyService] Testing mainstream tracks with different API approaches...')
+    
+    // Test 1: Direct track access without market
+    try {
+      const track1 = await this.makeSpotifyRequest(accessToken, '/tracks/7qiZfU4dY1lWllzX7mPBI3')
+      console.log(`   Test 1 (no market): "${track1.name}" - Preview: ${track1.preview_url ? 'AVAILABLE ✅' : 'NULL ❌'}`)
+    } catch (error) {
+      console.log(`   Test 1 error:`, error.message)
+    }
+
+    // Test 2: With specific market
+    try {
+      const track2 = await this.makeSpotifyRequest(accessToken, '/tracks/7qiZfU4dY1lWllzX7mPBI3?market=US')
+      console.log(`   Test 2 (market=US): "${track2.name}" - Preview: ${track2.preview_url ? 'AVAILABLE ✅' : 'NULL ❌'}`)
+    } catch (error) {
+      console.log(`   Test 2 error:`, error.message)
+    }
+
+    // Test 3: Different popular track
+    try {
+      const track3 = await this.makeSpotifyRequest(accessToken, '/tracks/1rfofaqEpACxVEHIZBJe6W') // Uptown Funk
+      console.log(`   Test 3 (Uptown Funk): "${track3.name}" - Preview: ${track3.preview_url ? 'AVAILABLE ✅' : 'NULL ❌'}`)
+    } catch (error) {
+      console.log(`   Test 3 error:`, error.message)
+    }
+
+    // Test 4: Check user's account type and country
+    try {
+      const user = await this.getCurrentUser(accessToken)
+      console.log(`   User country: ${user.country}`)
+      console.log(`   User product: ${user.product || 'unknown'}`)
+      console.log(`   User ID: ${user.id}`)
+    } catch (error) {
+      console.log(`   User info error:`, error.message)
+    }
+
+    // Test 5: Check if this is app-specific by testing a simple search
+    try {
+      const searchResult = await this.makeSpotifyRequest(accessToken, '/search?q=taylor%20swift%20shake%20it%20off&type=track&limit=1')
+      if (searchResult.tracks.items[0]) {
+        const track = searchResult.tracks.items[0]
+        console.log(`   Test 5 (Taylor Swift): "${track.name}" - Preview: ${track.preview_url ? 'AVAILABLE ✅' : 'NULL ❌'}`)
+        if (track.preview_url) {
+          console.log(`   Preview URL sample: ${track.preview_url.substring(0, 50)}...`)
+        }
+      }
+    } catch (error) {
+      console.log(`   Test 5 error:`, error.message)
+    }
+  }
+
+  async playTrack(accessToken, trackId, action = 'play') {
+    try {
+      if (action === 'play') {
+        // Start playback of specific track
+        return await this.makeSpotifyRequest(
+          accessToken,
+          '/me/player/play',
+          'PUT',
+          {
+            uris: [`spotify:track:${trackId}`]
+          }
+        )
+      } else if (action === 'pause') {
+        // Pause playback
+        return await this.makeSpotifyRequest(accessToken, '/me/player/pause', 'PUT')
+      }
+    } catch (error) {
+      console.error(`Error controlling playback:`, error)
+      throw error
+    }
+  }
+
+  async getPlaybackState(accessToken) {
+    try {
+      return await this.makeSpotifyRequest(accessToken, '/me/player')
+    } catch (error) {
+      if (error.response?.status === 204) {
+        return null // No active device
+      }
+      throw error
+    }
+  }
+
+  async getArtistDetails(accessToken, artistId) {
+    try {
+      return await this.makeSpotifyRequest(accessToken, `/artists/${artistId}`)
+    } catch (error) {
+      console.error(`Error getting artist details for ${artistId}:`, error)
+      return null
+    }
   }
 }

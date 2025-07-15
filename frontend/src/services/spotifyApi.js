@@ -1,78 +1,9 @@
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api'
+const API_BASE_URL = 'http://127.0.0.1:5000/api'
 
 class SpotifyAPI {
   constructor() {
     this.baseURL = API_BASE_URL
-    this.isRefreshing = false
-    this.failedQueue = []
-    
-    // Setup axios interceptor ONLY for this instance
-    this.axiosInstance = axios.create({
-      baseURL: this.baseURL,
-      withCredentials: true,
-      timeout: 10000
-    })
-    
-    this.setupInterceptors()
-  }
-
-  setupInterceptors() {
-    this.axiosInstance.interceptors.response.use(
-      (response) => response,
-      async (error) => {
-        const originalRequest = error.config
-
-        // Don't retry if it's not a 401 or if we already tried
-        if (error.response?.status !== 401 || originalRequest._retry) {
-          return Promise.reject(error)
-        }
-
-        // Don't retry auth endpoints to prevent infinite loops
-        if (originalRequest.url?.includes('/auth/')) {
-          return Promise.reject(error)
-        }
-
-        // If we're already refreshing, queue this request
-        if (this.isRefreshing) {
-          return new Promise((resolve, reject) => {
-            this.failedQueue.push({ resolve, reject })
-          }).then(() => {
-            return this.axiosInstance.request(originalRequest)
-          }).catch(err => {
-            return Promise.reject(err)
-          })
-        }
-
-        originalRequest._retry = true
-        this.isRefreshing = true
-
-        try {
-          await this.refreshAccessToken()
-          this.processQueue(null)
-          return this.axiosInstance.request(originalRequest)
-        } catch (refreshError) {
-          this.processQueue(refreshError)
-          // Don't redirect here, let the component handle it
-          return Promise.reject(refreshError)
-        } finally {
-          this.isRefreshing = false
-        }
-      }
-    )
-  }
-
-  processQueue(error) {
-    this.failedQueue.forEach(({ resolve, reject }) => {
-      if (error) {
-        reject(error)
-      } else {
-        resolve()
-      }
-    })
-    
-    this.failedQueue = []
+    console.log('🔍 [SpotifyAPI] Initialized with baseURL:', this.baseURL)
   }
 
   // Authentication methods
@@ -80,30 +11,17 @@ class SpotifyAPI {
     return `${this.baseURL}/auth/login`
   }
 
-  async refreshAccessToken() {
-    try {
-      const response = await axios.post(`${this.baseURL}/auth/refresh`, {}, {
-        withCredentials: true,
-        timeout: 5000
-      })
-      return response.data
-    } catch (error) {
-      console.error('Token refresh failed:', error)
-      throw new Error('Token refresh failed')
-    }
-  }
-
   async getSession() {
     try {
-      const response = await axios.get(`${this.baseURL}/auth/session`, {
-        withCredentials: true,
-        timeout: 5000
+      const response = await fetch(`${this.baseURL}/auth/session`, {
+        credentials: 'include'
       })
-      return response.data
-    } catch (error) {
-      if (error.response?.status === 401) {
-        return null // Not authenticated, don't throw
+      
+      if (response.ok) {
+        return await response.json()
       }
+      return null
+    } catch (error) {
       console.error('Session check failed:', error)
       return null
     }
@@ -111,72 +29,165 @@ class SpotifyAPI {
 
   async logout() {
     try {
-      await axios.post(`${this.baseURL}/auth/logout`, {}, {
-        withCredentials: true,
-        timeout: 5000
+      await fetch(`${this.baseURL}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
       })
     } catch (error) {
-      console.error('Logout error:', error)
-      // Don't throw, just log
+      console.error('Logout failed:', error)
     }
   }
 
-  // Spotify API methods using the configured instance
-  async getCurrentUser() {
+  // Test backend connection
+  async testConnection() {
     try {
-      const response = await this.axiosInstance.get('/spotify/me')
-      return response.data
+      const response = await fetch(`${this.baseURL}/health`)
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ [SpotifyAPI] Backend connection OK:', data)
+        return data
+      }
+      throw new Error(`HTTP ${response.status}`)
     } catch (error) {
-      console.error('Failed to get current user:', error)
-      throw new Error('Failed to get current user')
+      console.error('❌ [SpotifyAPI] Backend connection failed:', error)
+      throw error
     }
   }
 
+  // Spotify API methods
   async getCurrentTrack() {
     try {
-      const response = await this.axiosInstance.get('/spotify/currently-playing')
-      return response.data
+      console.log('🔍 [SpotifyAPI] Getting current track...')
+      const response = await fetch(`${this.baseURL}/spotify/currently-playing`, {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ [SpotifyAPI] Current track:', data?.title || 'None playing')
+        return data
+      }
+      console.log('ℹ️ [SpotifyAPI] No current track')
+      return null
     } catch (error) {
-      console.error('Error getting current track:', error)
-      return null // Don't throw for this, just return null
+      console.error('❌ [SpotifyAPI] Error getting current track:', error)
+      return null
     }
   }
 
   async getUserPlaylists() {
     try {
-      const response = await this.axiosInstance.get('/spotify/playlists')
-      return response.data.items || []
+      console.log('🔍 [SpotifyAPI] Getting user playlists...')
+      const response = await fetch(`${this.baseURL}/spotify/playlists`, {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ [SpotifyAPI] Playlists loaded:', data.items?.length || 0)
+        return data.items || []
+      }
+      return []
     } catch (error) {
-      console.error('Error getting playlists:', error)
-      return [] // Don't throw, return empty array
+      console.error('❌ [SpotifyAPI] Error getting playlists:', error)
+      return []
     }
   }
 
   async createPlaylist(name, description = '') {
     try {
-      const response = await this.axiosInstance.post('/spotify/playlists', {
-        name,
-        description,
-        public: false
+      console.log(`🔍 [SpotifyAPI] Creating playlist "${name}"...`)
+      const response = await fetch(`${this.baseURL}/spotify/playlists`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name,
+          description,
+          public: false
+        })
       })
-      return response.data
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ [SpotifyAPI] Playlist created:', data.name)
+        return data
+      }
+      throw new Error(`HTTP ${response.status}`)
     } catch (error) {
-      console.error('Error creating playlist:', error)
+      console.error('❌ [SpotifyAPI] Error creating playlist:', error)
       throw error
     }
   }
 
   async addToPlaylist(playlistId, trackId) {
     try {
-      const response = await this.axiosInstance.post(`/spotify/playlists/${playlistId}/tracks`, {
-        track_id: trackId
+      console.log(`🔍 [SpotifyAPI] Adding track ${trackId} to playlist ${playlistId}...`)
+      const response = await fetch(`${this.baseURL}/spotify/playlists/${playlistId}/tracks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          track_id: trackId
+        })
       })
-      return response.data
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ [SpotifyAPI] Track added to playlist')
+        return data
+      }
+      throw new Error(`HTTP ${response.status}`)
     } catch (error) {
-      console.error('Error adding to playlist:', error)
+      console.error('❌ [SpotifyAPI] Error adding to playlist:', error)
       throw error
+    }
+  }
+
+  async searchTracks(query, limit = 20) {
+    try {
+      console.log(`🔍 [SpotifyAPI] Searching for "${query}"...`)
+      const response = await fetch(`${this.baseURL}/spotify/search?q=${encodeURIComponent(query)}&type=track&limit=${limit}`, {
+        credentials: 'include'
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ [SpotifyAPI] Search results:', data.tracks?.items?.length || 0)
+        return data.tracks?.items || []
+      }
+      return []
+    } catch (error) {
+      console.error('❌ [SpotifyAPI] Error searching:', error)
+      return []
+    }
+  }
+
+  async getPlaylistTracks(playlistId) {
+    try {
+      console.log(`🔍 [SpotifyAPI] Getting tracks for playlist ${playlistId}...`)
+      const response = await fetch(`${this.baseURL}/spotify/playlists/${playlistId}/tracks`, {
+        credentials: 'include'
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ [SpotifyAPI] Playlist tracks:', data.items?.length || 0)
+        return data.items || []
+      }
+      return []
+    } catch (error) {
+      console.error('❌ [SpotifyAPI] Error getting playlist tracks:', error)
+      return []
     }
   }
 }
 
 export const spotifyApi = new SpotifyAPI()
+
+// Test connection on load
+spotifyApi.testConnection().catch(() => {
+  console.warn('⚠️ Backend may not be running')
+})

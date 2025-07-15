@@ -87,4 +87,23 @@ export class SpotifyController {
       res.status(500).json({ error: 'Failed to add track to playlist' })
     }
   }
+
+  async search(req, res) {
+    try {
+      const { q, type = 'track', limit = 20 } = req.query
+      
+      if (!q) {
+        return res.status(400).json({ error: 'Query parameter q is required' })
+      }
+
+      const results = await this.spotifyService.search(req.accessToken, q, type, limit)
+      res.json(results)
+    } catch (error) {
+      console.error('Search error:', error)
+      if (error.message === 'TOKEN_EXPIRED') {
+        return res.status(401).json({ error: 'Token expired' })
+      }
+      res.status(500).json({ error: 'Search failed' })
+    }
+  }
 }

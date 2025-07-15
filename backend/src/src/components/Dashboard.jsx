@@ -5,6 +5,7 @@ import StatusBar from './StatusBar/StatusBar'
 import LikedSongsOrganizer from './LikedSongs/LikedSongsOrganizer'
 import { usePlaylistManager } from '../hooks/usePlaylistManager'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useLikedSongsKeyboard } from '../hooks/useLikedSongsKeyboard'
 import { Heart, TrendingUp } from 'lucide-react'
 
 const Dashboard = () => {
@@ -31,15 +32,31 @@ const Dashboard = () => {
     onEnter: showLikedSongsOrganizer ? null : refreshCurrentSong
   })
 
-  const handleStartOrganizing = () => {
-    console.log('🔍 Start Organizing button clicked!')
-    setShowLikedSongsOrganizer(true)
-  }
-
   const handleAddToPlaylistFromLiked = async (playlistKey, song) => {
-    // This function is handled directly in LikedSongsOrganizer
-    // since it needs to mark songs as sorted
-    return true
+    // Use the existing addToPlaylist function but with the liked song
+    const playlist = playlists.find(p => p.key.toLowerCase() === playlistKey.toLowerCase())
+    if (!playlist || !song) return
+
+    try {
+      // First add to the actual Spotify playlist
+      if (playlist.spotify_id && song.id) {
+        const response = await fetch(`http://127.0.0.1:5000/api/spotify/playlists/${playlist.spotify_id}/tracks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ track_id: song.id })
+        })
+
+        if (!response.ok) throw new Error('Failed to add to playlist')
+      }
+
+      // Update local state (similar to existing addToPlaylist)
+      // Note: This is handled by the parent usePlaylistManager hook
+      return true
+    } catch (error) {
+      console.error('Error adding song to playlist:', error)
+      throw error
+    }
   }
 
   if (loading) {
@@ -66,11 +83,11 @@ const Dashboard = () => {
         </div>
 
         {/* Liked Songs Banner */}
-        <div className="bg-gradient-to-r from-pink-500 to-red-500 rounded-2xl p-6 mb-8 text-white shadow-2xl">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="bg-gradient-to-r from-pink-500 to-red-500 rounded-2xl p-6 mb-8 text-white">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="bg-white bg-opacity-20 rounded-full p-3">
-                <Heart size={32} fill="currentColor" className="text-white" />
+                <Heart size={32} fill="currentColor" />
               </div>
               <div>
                 <h2 className="text-2xl font-bold mb-1">Organize Your Liked Songs</h2>
@@ -80,8 +97,8 @@ const Dashboard = () => {
               </div>
             </div>
             <button
-              onClick={handleStartOrganizing}
-              className="bg-white text-pink-600 px-6 py-3 rounded-full font-bold hover:bg-gray-100 transition-colors flex items-center gap-2 whitespace-nowrap shadow-lg"
+              onClick={() => setShowLikedSongsOrganizer(true)}
+              className="bg-white text-pink-600 px-6 py-3 rounded-full font-bold hover:bg-gray-100 transition-colors flex items-center gap-2"
             >
               <TrendingUp size={20} />
               Start Organizing
@@ -118,7 +135,7 @@ const Dashboard = () => {
               <div><strong>A-Z:</strong> Add current song to playlist</div>
               <div><strong>Space:</strong> Refresh current song</div>
               <div><strong>Enter:</strong> Refresh current song</div>
-              <div><strong>Pink Button:</strong> Organize liked songs</div>
+              <div><strong>Heart Button:</strong> Organize liked songs</div>
             </div>
           </div>
         </div>

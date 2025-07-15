@@ -10,18 +10,9 @@ import rateLimit from 'express-rate-limit'
 import config from './config/index.js'
 import authRoutes from './routes/auth.js'
 import spotifyRoutes from './routes/spotify.js'
-import likedSongsRoutes from './routes/likedSongs.js'
-import { createPlaybackRoutes } from './routes/playback.js'
-import { SpotifyService } from './services/spotifyService.js'
 
 const app = express()
 const PORT = config.PORT
-
-// Initialize services
-const spotifyService = new SpotifyService()
-
-// Create playback routes with service dependency
-const playbackRoutes = createPlaybackRoutes(spotifyService)
 
 // Rate limiting - more lenient for development
 const limiter = rateLimit({
@@ -61,8 +52,6 @@ app.use(session({
 // Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/spotify', spotifyRoutes)
-app.use('/api/spotify', playbackRoutes)
-app.use('/api/liked-songs', likedSongsRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
